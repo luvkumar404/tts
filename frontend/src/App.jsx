@@ -1,48 +1,19 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import Landing from './pages/Landing';
-import Login from './pages/Login';
-import Register from './pages/Register';
+import { useEffect, useState } from 'react';
 import Dashboard from './pages/Dashboard';
+import Reader from './pages/Reader';
 
-function ProtectedRoute({ children }) {
-  const token = localStorage.getItem('token');
-  if (!token) return <Navigate to="/login" replace />;
-  return children;
-}
-
-function App() {
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
-  });
-
+export default function App() {
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
-    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+    localStorage.setItem('darkMode', String(darkMode));
   }, [darkMode]);
-
-  const toggleDarkMode = () => setDarkMode((prev) => !prev);
-
-  return (
-    <Routes>
-      <Route path="/" element={<Landing darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
-      <Route path="/login" element={<Login darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
-      <Route
-        path="/register"
-        element={<Register darkMode={darkMode} toggleDarkMode={toggleDarkMode} />}
-      />
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <Dashboard darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
+  const shared = { darkMode, toggleDarkMode: () => setDarkMode((value) => !value) };
+  return <Routes>
+    <Route path="/" element={<Dashboard {...shared} />} />
+    <Route path="/dashboard" element={<Navigate to="/" replace />} />
+    <Route path="/reader/:bookId" element={<Reader {...shared} />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>;
 }
-
-export default App;

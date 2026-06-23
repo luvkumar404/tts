@@ -10,6 +10,7 @@ const LANGUAGES = [
   { code: 'it-IT', label: 'Italian' },
   { code: 'pt-BR', label: 'Portuguese (Brazil)' },
   { code: 'hi-IN', label: 'Hindi' },
+  { code: 'hinglish', label: 'Hinglish' },
   { code: 'ja-JP', label: 'Japanese' },
   { code: 'zh-CN', label: 'Chinese (Mandarin)' },
 ];

@@ -1,116 +1,50 @@
 import { useRef, useState } from 'react';
 import API from '../api/axios';
 
-const ACCEPTED = '.pdf,.docx,.txt';
+const ACCEPTED = '.pdf,.epub,.docx,.txt';
 
-export default function DocumentUpload({ onTextExtracted, onDocumentSaved }) {
-  const fileInputRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+export default function DocumentUpload({ onComplete }) {
+  const input = useRef(null);
   const [dragOver, setDragOver] = useState(false);
+  const [stage, setStage] = useState('idle');
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [error, setError] = useState('');
 
-  const validateFile = (file) => {
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    if (!['pdf', 'docx', 'txt'].includes(ext)) {
-      return 'Unsupported file type. Only PDF, DOCX, and TXT are allowed.';
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      return 'File too large. Maximum size is 10MB.';
-    }
-    return null;
+  const validate = (file) => {
+    if (!file || file.size === 0) return 'The selected file is empty.';
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!['pdf', 'epub', 'docx', 'txt'].includes(extension)) return 'Upload a PDF, EPUB, DOCX, or TXT file.';
+    return '';
   };
-
-  const uploadFile = async (file) => {
-    const validationError = validateFile(file);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setUploading(true);
-    setError('');
-
-    const formData = new FormData();
-    formData.append('document', file);
-
+  const upload = async (file) => {
+    const problem = validate(file);
+    if (problem) return setError(problem);
+    setError(''); setStage('uploading'); setUploadPercent(0);
+    const body = new FormData(); body.append('document', file);
     try {
-      const { data } = await API.post('/documents/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const { data } = await API.post('/documents/upload', body, {
+        onUploadProgress: ({ loaded, total }) => {
+          if (total) setUploadPercent(Math.round((loaded / total) * 100));
+          if (total && loaded >= total) setStage('extracting');
+        },
       });
-      onTextExtracted(data.extractedText);
-      onDocumentSaved?.(data);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Upload failed. Please try again.');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+      setStage('complete'); onComplete?.(data);
+    } catch (err) { setError(err.response?.data?.message || 'Upload or extraction failed.'); setStage('idle'); }
+    finally { if (input.current) input.current.value = ''; }
   };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) uploadFile(file);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) uploadFile(file);
-  };
-
-  return (
-    <div className="card">
-      <h2 className="mb-4 text-lg font-semibold">Upload document</h2>
-
-      <div
-        className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-          dragOver
-            ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20'
-            : 'border-gray-300 dark:border-gray-700'
-        }`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-      >
-        <div className="text-4xl">📁</div>
-        <p className="mt-3 text-sm font-medium">Drag & drop a file here</p>
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          PDF, DOCX, or TXT — max 10MB
-        </p>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPTED}
-          onChange={handleFileChange}
-          className="hidden"
-          id="file-upload"
-          disabled={uploading}
-        />
-        <label
-          htmlFor="file-upload"
-          className={`btn-primary mt-4 inline-flex cursor-pointer ${uploading ? 'pointer-events-none opacity-50' : ''}`}
-        >
-          {uploading ? 'Extracting text...' : 'Choose file'}
-        </label>
-      </div>
-
-      {uploading && (
-        <div className="mt-4 flex items-center gap-2 text-sm text-brand-600 dark:text-brand-400">
-          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
-          Uploading and extracting text...
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
-          {error}
-        </div>
-      )}
+  return <div className="card">
+    <h2 className="text-lg font-semibold">Upload a book</h2>
+    <p className="mt-1 text-sm text-gray-500">Files are extracted into real chapters; temporary uploads are deleted after processing.</p>
+    <div className={`mt-5 rounded-xl border-2 border-dashed p-10 text-center ${dragOver ? 'border-brand-500 bg-brand-50 dark:bg-brand-950' : 'border-gray-300 dark:border-gray-700'}`}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); upload(e.dataTransfer.files?.[0]); }}>
+      <p className="font-medium">Drag and drop a book here</p>
+      <p className="mt-1 text-xs text-gray-500">PDF, EPUB, DOCX, or TXT</p>
+      <input ref={input} id="book-upload" type="file" accept={ACCEPTED} className="hidden" disabled={stage === 'uploading' || stage === 'extracting'} onChange={(e) => upload(e.target.files?.[0])} />
+      <label htmlFor="book-upload" className="btn-primary mt-4 cursor-pointer">Choose file</label>
     </div>
-  );
+    {stage === 'uploading' && <div className="mt-4" aria-live="polite"><div className="flex justify-between text-sm"><span>Uploading</span><span>{uploadPercent}%</span></div><div className="mt-1 h-2 rounded bg-gray-200"><div className="h-2 rounded bg-brand-600" style={{ width: `${uploadPercent}%` }} /></div></div>}
+    {stage === 'extracting' && <p className="mt-4 text-sm text-brand-600" aria-live="polite">Upload complete. Extracting metadata and chapters…</p>}
+    {stage === 'complete' && <p className="mt-4 text-sm text-green-700">Chapter processing complete.</p>}
+    {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300" role="alert">{error}</p>}
+  </div>;
 }

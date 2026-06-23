@@ -1,79 +1,21 @@
-# VoiceDoc TTS
+# VoiceDoc Tutor
 
-A full-stack MERN web application that converts pasted text and uploaded documents (PDF, DOCX, TXT) into spoken audio using the **browser's built-in Web Speech API** (`window.speechSynthesis`). No premium TTS API keys required.
+A public MERN book reader and grounded teaching assistant. Upload PDF, EPUB, DOCX, or TXT books, extract chapter structure and embedded visuals, read or listen with `window.speechSynthesis`, create chapter lessons, ask source-grounded questions, and resume later in the same browser.
 
-## Tech Stack
+## Requirements
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 18 + Vite + Tailwind CSS |
-| Backend | Node.js + Express.js |
-| Database | MongoDB + Mongoose |
-| Auth | JWT + bcrypt |
-| File Upload | Multer |
-| Text Extraction | pdf-parse, mammoth |
+- Node.js 18+
+- MongoDB
+- A browser with the Web Speech API (Chrome, Edge, or Safari recommended)
 
-## Project Structure
-
-```
-tts/
-├── backend/
-│   ├── server.js
-│   ├── config/db.js
-│   ├── models/User.js, Document.js
-│   ├── routes/authRoutes.js, documentRoutes.js
-│   ├── controllers/authController.js, documentController.js
-│   ├── middleware/authMiddleware.js, uploadMiddleware.js
-│   ├── utils/extractText.js
-│   └── uploads/
-└── frontend/
-    └── src/
-        ├── pages/Login.jsx, Register.jsx, Dashboard.jsx, Landing.jsx
-        ├── components/Navbar, TextEditor, DocumentUpload, VoiceControls, DocumentHistory
-        └── utils/speech.js
-```
-
-## Prerequisites
-
-- **Node.js** 18+ and npm
-- **MongoDB** running locally (`mongodb://localhost:27017`) or a [MongoDB Atlas](https://www.mongodb.com/atlas) connection string
-
-## Installation & Setup
-
-### 1. Clone and enter the project
-
-```bash
-cd tts
-```
-
-### 2. Backend setup
+## Run locally
 
 ```bash
 cd backend
 npm install
 cp .env.example .env
-```
-
-Edit `backend/.env`:
-
-```env
-PORT=5000
-MONGO_URI=mongodb://localhost:27017/voicedoc-tts
-JWT_SECRET=your_super_secret_jwt_key_change_this
-CLIENT_URL=http://localhost:5173
-```
-
-Start the backend:
-
-```bash
 npm run dev
 ```
-
-Server runs at **http://localhost:5000**
-
-### 3. Frontend setup
-
-Open a new terminal:
 
 ```bash
 cd frontend
@@ -81,131 +23,60 @@ npm install
 npm run dev
 ```
 
-App runs at **http://localhost:5173**
+The frontend defaults to `http://localhost:5173`; the API defaults to `http://localhost:5000/api`. Set `VITE_API_URL` in `frontend/.env` to override the API base URL.
 
-## MongoDB Schema
+## Environment variables
 
-### User Collection
+Backend:
 
-```javascript
-{
-  _id: ObjectId,
-  name: String,        // required
-  email: String,       // required, unique
-  password: String,    // bcrypt hashed
-  createdAt: Date,
-  updatedAt: Date
-}
-```
+| Variable | Required | Purpose |
+|---|---:|---|
+| `MONGO_URI` | Yes | Existing MongoDB connection string |
+| `PORT` | No | API port; default `5000` |
+| `CLIENT_URL` | No | Comma-separated allowed frontend origins |
+| `TUTOR_RATE_LIMIT` | No | Tutor requests per IP per minute; default `30` |
 
-### Document Collection
+No JWT or TTS key is used. Speech is generated only by the browser. The bundled tutor is extractive and uses only stored chapter text; it does not call an external AI provider.
 
-```javascript
-{
-  _id: ObjectId,
-  userId: ObjectId,           // ref: User
-  originalFilename: String,
-  fileType: "pdf" | "docx" | "txt",
-  extractedText: String,
-  createdAt: Date,
-  updatedAt: Date
-}
-```
+## Main flow
 
-## API Reference
+1. `/` opens the public library and upload dashboard.
+2. Upload uses actual browser transfer progress, followed by an indeterminate extraction stage.
+3. The backend validates the extension, MIME type, file signature, and extracted content, then deletes the temporary file.
+4. PDF.js renders image-bearing/scanned PDF pages; EPUB archive images and Mammoth DOCX images retain approximate chapter/paragraph placement.
+5. Image bytes are normalized and stored as separate, session-scoped MongoDB records. API responses never expose filesystem paths.
+6. Structural headings and format navigation take priority over fallback page sections.
+7. `/reader/:bookId` provides chapters, responsive images, zoomable previews, reading settings, paragraph speech, teaching content, quizzes, grounded chat, and citations.
+6. A random browser identifier in local storage scopes library history and reading progress without user accounts.
 
-All document routes require `Authorization: Bearer <token>` header.
+Scanned PDFs are not OCR-processed because no OCR service exists in this project. Scanned pages remain viewable as rendered images and are labeled: “This is a scanned page. Text extraction is unavailable, but you can still view the page.” Password-protected PDFs are rejected with a specific error.
 
-### Auth
+## API
 
-| Method | Endpoint | Body | Description |
-|--------|----------|------|-------------|
-| POST | `/api/auth/register` | `{ name, email, password }` | Register user |
-| POST | `/api/auth/login` | `{ email, password }` | Login, returns JWT |
-| GET | `/api/auth/me` | — | Get current user (protected) |
+All document requests include `X-Session-ID` (16–100 URL-safe characters).
 
-### Documents
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/config` | Upload configuration |
+| `POST` | `/api/documents/upload` | Upload and extract field `document` |
+| `GET` | `/api/documents` | Browser-scoped book history |
+| `GET` | `/api/documents/:id` | Full extracted book |
+| `GET` | `/api/documents/:id/chapters` | Reader data |
+| `GET` | `/api/documents/:id/images/:imageId` | Stream a session-scoped image |
+| `POST` | `/api/documents/:id/images/:imageId/explain` | Explain an image from caption and chapter evidence |
+| `PUT` | `/api/documents/:id/progress` | Save reading position |
+| `POST` | `/api/documents/:id/lessons` | Generate chapter/book lesson |
+| `POST` | `/api/documents/:id/tutor` | Ask a grounded question |
+| `DELETE` | `/api/documents/:id` | Delete a book |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/documents/upload` | Upload file (multipart field: `document`) |
-| GET | `/api/documents` | List user's documents (no extracted text) |
-| GET | `/api/documents/:id` | Get single document with extracted text |
-| DELETE | `/api/documents/:id` | Delete document |
-
-### Health Check
-
-```
-GET /api/health
-```
-
-## API Testing Examples (curl)
-
-### Register
+## Verification
 
 ```bash
-curl -X POST http://localhost:5000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"name":"John Doe","email":"john@example.com","password":"secret123"}'
+cd backend
+npm test
+cd ../frontend
+npm test
+npm run build
 ```
 
-### Login
-
-```bash
-curl -X POST http://localhost:5000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"john@example.com","password":"secret123"}'
-```
-
-Save the `token` from the response.
-
-### Upload document
-
-```bash
-curl -X POST http://localhost:5000/api/documents/upload \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -F "document=@/path/to/your/file.pdf"
-```
-
-### Get documents
-
-```bash
-curl http://localhost:5000/api/documents \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-```
-
-### Get single document
-
-```bash
-curl http://localhost:5000/api/documents/DOCUMENT_ID \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-```
-
-### Delete document
-
-```bash
-curl -X DELETE http://localhost:5000/api/documents/DOCUMENT_ID \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-```
-
-## Features
-
-- **JWT authentication** — register, login, protected routes
-- **Document upload** — PDF, DOCX, TXT up to 10MB with server-side text extraction
-- **Web Speech API TTS** — voice selection, language, rate, pitch, volume
-- **Chunked speech** — long documents split into ~250 char chunks to prevent browser crashes
-- **Playback controls** — speak, pause, resume, stop with progress indicator
-- **Document history** — save, browse, reload, and delete past documents
-- **Dark mode** — toggle light/dark theme
-- **Responsive UI** — works on mobile and desktop
-
-## Important Notes
-
-- TTS runs **entirely in the browser** via `SpeechSynthesisUtterance`. The backend only extracts and stores text.
-- Voice availability depends on your OS and browser (Chrome/Edge/Safari recommended).
-- MP3 export is **not supported** — Web Speech API does not reliably produce downloadable audio.
-- Uploaded files are deleted from disk after text extraction; only metadata and text are stored in MongoDB.
-
-## License
-
-MIT
+Uploaded originals are never retained. Extracted text and chapter metadata are stored in the existing MongoDB database. Access is anonymous and browser-scoped, not authentication-grade privacy; do not use this deployment model for confidential documents without adding an appropriate access-control layer.
